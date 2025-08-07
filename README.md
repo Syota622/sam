@@ -1,1 +1,15 @@
-# AWS SAM
+# AWS SAM CLI
+- sam init
+  - 新しくプロジェクトを作成する
+- sam build
+  - ローカル実行やデプロイを行う前に、アプリケーションを準備するコマンド。
+  - このコマンドを実行すると.aws-samというディレクトリが作成される。
+- sam deploy
+  - AWSクラウド上にアプリケーションをデプロイ
+- sam list
+  - 現在のリソースを確認
+- sam local
+  - 例：sam local start-api
+  - SAM CLIはDockerを利用して、ローカルHTTPサーバーを通じてLambda関数をローカル環境で実行可能
+- sam local invoke {リソースID}
+  - Lambda関数を単体でローカルに実行する
