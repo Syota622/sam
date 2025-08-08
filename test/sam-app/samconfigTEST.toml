@@ -1,0 +1,38 @@
+version = 0.1
+
+[dev]
+version = 0.1
+
+[dev.deploy]
+version = 0.1
+
+[dev.deploy.parameters]
+stack_name = "sam-test-dev"
+resolve_s3 = true
+s3_prefix = "sam-test-dev"
+region = "ap-northeast-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+image_repositories = []
+parameter_overrides = "Environment=dev"
+tags = "Environment=dev Project=sam-test"
+
+[dev.build]
+version = 0.1
+
+[dev.build.parameters]
+use_container = true
+cached = true
+parallel = true
+
+[dev.local_start_api]
+version = 0.1
+
+[dev.local_start_api.parameters]
+warm_containers = "EAGER"
+container_host = "localhost"
+container_port = 3000
+host = "127.0.0.1"
+port = 3000
+debug = true
