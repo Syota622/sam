@@ -41,6 +41,9 @@ Resources:
       Runtime: python3.12
       Architectures:
       - x86_64
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
       Events:
         HelloWorld:
           Type: Api

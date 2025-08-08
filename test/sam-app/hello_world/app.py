@@ -1,4 +1,5 @@
 import json
+import os
 
 # import requests
 
@@ -33,10 +34,13 @@ def lambda_handler(event, context):
 
     #     raise e
 
+    # 環境変数から環境名を取得
+    environment = os.environ.get('ENVIRONMENT', 'unknown')
+    
     return {
         "statusCode": 200,
         "body": json.dumps({
-            "message": "hello world",
+            "message": f"hello world {environment}",
             # "location": ip.text.replace("\n", "")
         }),
     }
