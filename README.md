@@ -15,5 +15,8 @@
   - SAM CLIはDockerを利用して、ローカルHTTPサーバーを通じてLambda関数をローカル環境で実行可能
 - sam local invoke {リソースID}
   - Lambda関数を単体でローカルに実行する
-- sam deploy --config-env dev --config-file samconfigTEST.toml
-- sam delete --config-env dev --config-file samconfigTEST.toml
+- sam deploy
+  - sam deploy --config-env dev --config-file samconfigTEST.toml（開発環境）
+  - sam deploy --config-env prod --config-file samconfigTEST.toml（本番環境）
+- sam delete --config-env dev --config-file samconfigTEST.toml（開発環境）
+  - sam delete --config-env prod --config-file samconfigTEST.toml（本番環境）
