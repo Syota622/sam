@@ -1,44 +1,42 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: 'sam-app
+Description: >
+  sam-app
 
   Sample SAM Template for sam-app
 
-  '
 Parameters:
   Environment:
     Type: String
     Default: prod
     Description: Environment name (dev, staging, prod)
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
     Timeout: 3
     Tracing: Active
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
     LoggingConfig:
       LogFormat: JSON
 Resources:
   MyCustomApi:
     Type: AWS::Serverless::Api
     Properties:
-      Name:
-        Fn::Sub: my-custom-api-${Environment}
-      StageName:
-        Fn::Sub: ${Environment}
+      Name: !Sub "my-custom-api-${Environment}"
+      StageName: !Sub "${Environment}"
       TracingEnabled: true
       Cors:
-        AllowMethods: '''GET,POST,OPTIONS'''
-        AllowHeaders: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
-        AllowOrigin: '''*'''
-      Description:
-        Fn::Sub: API Gateway for ${Environment} environment
-    Metadata:
-      SamResourceId: MyCustomApi
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      Description: !Sub "API Gateway for ${Environment} environment"
+
   MyCustomFunction:
-    Type: AWS::Serverless::Function
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
-      FunctionName:
-        Fn::Sub: my-custom-function-${Environment}
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-owpwdlbsvnyj/c6ce8fa8b5a97dd022ecd006536eb5a4
+      FunctionName: !Sub "my-custom-function-${Environment}"
+      CodeUri: hello_world/
       Handler: app.lambda_handler
       Runtime: python3.12
       Architectures:
@@ -47,12 +45,10 @@ Resources:
         HelloWorld:
           Type: Api
           Properties:
-            RestApiId:
-              Ref: MyCustomApi
+            RestApiId: !Ref MyCustomApi
             Path: /hello
             Method: get
-    Metadata:
-      SamResourceId: MyCustomFunction
+
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
     Properties:
@@ -60,30 +56,19 @@ Resources:
         Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
       ResourceQuery:
         Type: CLOUDFORMATION_STACK_1_0
-    Metadata:
-      SamResourceId: ApplicationResourceGroup
   ApplicationInsightsMonitoring:
     Type: AWS::ApplicationInsights::Application
     Properties:
       ResourceGroupName:
         Ref: ApplicationResourceGroup
       AutoConfigurationEnabled: 'true'
-    Metadata:
-      SamResourceId: ApplicationInsightsMonitoring
 Outputs:
   MyCustomApi:
     Description: API Gateway endpoint URL for Hello World function
-    Value:
-      Fn::Sub: https://${MyCustomApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/hello/
+    Value: !Sub "https://${MyCustomApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/hello/"
   MyCustomFunction:
     Description: Hello World Lambda Function ARN
-    Value:
-      Fn::GetAtt:
-      - MyCustomFunction
-      - Arn
+    Value: !GetAtt MyCustomFunction.Arn
   MyCustomFunctionIamRole:
     Description: Implicit IAM Role created for Hello World function
-    Value:
-      Fn::GetAtt:
-      - MyCustomFunctionRole
-      - Arn
+    Value: !GetAtt MyCustomFunctionRole.Arn
