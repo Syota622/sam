@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="ja">
+
     <head>
         <meta charset="UTF-8">
         <title>ユーザ情報登録</title>
         <style>
-        label{
-            display: inline-block;
-            text-align: right;
-            width: 150px;
-        }
+            label {
+                display: inline-block;
+                text-align: right;
+                width: 150px;
+            }
         </style>
     </head>
+
     <body>
-        <form action="https://ドメイン名/users-stage/users">
+        <form action="https://test.execute-api.ap-northeast-1.amazonaws.com/users-stage/users">
             <h2>ユーザ情報登録</h2>
             <label for="id">ユーザID</label>
             <input type="text" name="id"><br>
@@ -25,14 +27,14 @@
             <label for="age">電話番号</label>
             <input type="text" name="tel"><br>
         </form>
-        
+
         <button id="register">登録</button>
         <ul>
             <li><a href="ECMenu.html">ECサイトメニュー</a></li>
-        </ul>            
+        </ul>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
         <script>
-            $("#register").on("click", function() {
+            $("#register").on("click", function () {
                 // Form内の情報をJSONに変換
                 var data = $('form').serializeArray();
                 // REST APIのURL指定
@@ -41,19 +43,19 @@
                 data = parseJson(data);
                 // Ajax送信
                 $.ajax({
-                    type:          'post',
-                    dataType:      'json',
-                    contentType:   'application/json',
+                    type: 'post',
+                    dataType: 'json',
+                    contentType: 'application/json',
                     scriptCharset: 'utf-8',
-                    url:           action,
-                    data:          JSON.stringify(data)
-                }).then(function() {
+                    url: action,
+                    data: JSON.stringify(data)
+                }).then(function () {
                     // メッセージ表示
                     alert("登録が完了しました！");
                 })
             });
             // JSON整形
-            var parseJson = function(data) {
+            var parseJson = function (data) {
                 var returnJson = {};
                 for (idx = 0; idx < data.length; idx++) {
                     returnJson[data[idx].name] = data[idx].value
@@ -62,4 +64,5 @@
             }
         </script>
     </body>
+
 </html>
