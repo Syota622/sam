@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <title>オンラインショッピング</title>
+        <style>
+            /* 1列目のスタイル */
+            .th-css{
+              border-style:none;
+            }
+            /* 2列目のスタイル */
+            table th,td:nth-of-type(1){
+              border: solid 1px;
+            }  
+            /* 3列目のスタイル */
+            table th,td:nth-of-type(2){
+              border: solid 1px;
+            }  
+            /* 4列目のスタイル */
+            table th,td:nth-of-type(3){
+              border: solid 1px;
+            }
+            /* セルの線を重ねる */
+            table {
+                border-collapse:  collapse;
+            }
+        </style>        
+    </head>
+    <body>
+        <form action="https://ドメイン名/products-stage/products" id="productsForm">
+            <h2>オンラインショッピング</h2>
+            <table id="productsTable">
+              <tr>
+                <th class="th-css">選択肢</th>
+                <th>商品ID</th>
+                <th>商品名</th>
+                <th>単価</th>
+              </tr>
+            </table><br>
+        </form>
+        <button id="get">商品情報取得</button>
+        <button id="update">購入</button>
+        
+        <ul>
+            <li><a href="ECMenu.html">ECサイトメニュー</a></li>
+        </ul>
+        
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+        <script>
+            let table = document.getElementById('productsTable');
+            // 照会イベント
+            $("#get").on("click", function() {
+                // REST APIのURL指定
+                var action = $("form").attr("action");
+                // Ajax送信
+                $.ajax({
+                    type:          'get',
+                    dataType:      'json',
+                    contentType:   'application/json',
+                    scriptCharset: 'utf-8',
+                    url:           action
+                }).then(function(response) {
+                    if (response === null || response === undefined) {
+                        // メッセージ表示
+                        alert("取得対象データの取得に失敗しました。対象のデータが存在しません！");                    
+                    } else {
+                        var len;
+                        // レスポンス内のJSON件数取得
+                        len = Object.keys(response).length;
+
+                        // JSON件数分繰り返し
+                        for (var i = 0; i < len; i++) {
+                            // 行作成
+                            let row_2 = document.createElement('tr');
+                            
+                            // ラベル作成作成 
+                            var input_label = document.createElement('label');                        
+                            
+                            // ラジオボタン作成                            
+                            var input_radio = document.createElement("input");
+                            input_radio.type = "radio";
+                            input_radio.class = "bd";
+                            input_radio.id = "radioId";
+                            
+                            // ラジオボタンの名前付与（複数ラジオボタンに同名称付与で1つのみ選択可能にする）
+                            input_radio.name = "selectProduct";
+                            
+                            // 商品ID作成、データ設定
+                            let row_2_data_1 = document.createElement('td');
+                            row_2_data_1.id = "id";
+                            row_2_data_1.innerHTML = response[i].id;
+                            
+                            // 商品名作成、データ設定
+                            let row_2_data_2 = document.createElement('td');
+                            row_2_data_2.name = "name";
+                            row_2_data_2.id = "name";                        
+                            row_2_data_2.innerHTML = response[i].name;
+                            
+                            // 価格作成、データ設定
+                            let row_2_data_3 = document.createElement('td');
+                            row_2_data_3.name = "price";
+                            row_2_data_3.id = "price";                          
+                            row_2_data_3.innerHTML = response[i].price;
+                            
+                            // 追加したラベルにラジオボタン追加
+                            input_label.appendChild(input_radio);
+                            // 追加した行にラベル追加
+                            row_2.appendChild(input_label);
+                            // 追加した行に商品IDの値追加
+                            row_2.appendChild(row_2_data_1);
+                            // 追加した行に商品名の値追加
+                            row_2.appendChild(row_2_data_2);
+                            // 追加した行に価格の値追加
+                            row_2.appendChild(row_2_data_3);
+                            
+                            // テーブルに行追加
+                            table.appendChild(row_2);  
+                        }
+                        // メッセージ表示
+                        alert("取得対象データの取得が完了しました。対象のデータをご確認ください！");
+                    }
+                })
+            });
+            
+            // ラジオボタン選択行番号取得
+            var line;
+            $(function(){            
+                $(document).on('change', 'input[type="radio"]', function() {            
+                    line = $(this).parents('tr').index();
+                });
+            });
+
+            // 更新イベント
+            $("#update").on("click", function() {
+                // REST APIのURL指定（在庫情報取得）
+                var action = "https://ドメイン名/stock-stage/stock"+"?id="+table.rows[line].cells[0].innerHTML;
+                // Ajax送信①（商品IDをキーに在庫情報から在庫数を取得）
+                $.ajax({
+                    type:          'get',
+                    dataType:      'json',
+                    contentType:   'application/json',
+                    scriptCharset: 'utf-8',
+                    url:           action
+                }).then(function(response) {
+                    if (response === null || response === undefined) {
+                        // メッセージ表示
+                        alert("購入対象データの取得に失敗しました。対象の商品の在庫がありません！");
+                        
+                    // 在庫数が取得できた場合
+                    } else {
+                        var data = {};
+                        // 選択済みの商品の商品IDを設定
+                        data["id"] = table.rows[line].cells[0].innerHTML;
+                         // 選択済みの商品の在庫数をマイナス１して設定
+                        data["number"] = response.number-1;
+              
+                        // REST APIのURL指定（在庫情報更新）
+                        var action = "https://ドメイン名/stock-stage/stock";
+                        // Ajax送信②（在庫情報を更新）
+                        $.ajax({
+                            type:          'put',
+                            dataType:      'json',
+                            contentType:   'application/json',
+                            scriptCharset: 'utf-8',
+                            url:           action,
+                            data:          JSON.stringify(data)
+                    }).then(function() {
+                        // メッセージ表示
+                        alert("商品の購入が完了しました！");
+                        })
+                    }
+                })
+            });
+        </script>
+    </body>
+</html>

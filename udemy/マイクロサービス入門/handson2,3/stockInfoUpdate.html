@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <title>在庫情報修正</title>
+        <style>
+            label{
+                display: inline-block;
+                text-align: right;
+                width: 150px;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>在庫情報修正</h2>
+        
+        <h3>照会</h3>
+        <label for="id">照会ID</label>
+        <input type="text" name="getId" id="getId">
+        <button id="get">照会</button><br><br>
+        
+        <form action="https://ドメイン名/stock-stage/stock">
+            <label for="id">商品ID</label>
+            <input type="text" name="id" id="id"><br>
+            <label for="number">在庫数</label>
+            <input type="text" name="number" id="number"><br>
+        </form>
+        
+        <h3>更新・削除</h3>
+        <button id="update">更新</button>
+        <button id="delete">削除</button>
+        
+        <ul>
+            <li><a href="productsStockMenu.html">商品在庫管理メニュー</a></li>
+        </ul>
+        
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+        <script>
+            // 照会イベント
+            $("#get").on("click", function() {
+                // REST APIのURL指定
+                var action = $("form").attr("action")+"?id="+document.getElementById("getId").value;
+                // Ajax送信
+                $.ajax({
+                    type:          'get',
+                    dataType:      'json',
+                    contentType:   'application/json',
+                    scriptCharset: 'utf-8',
+                    url:           action
+                }).then(function(response) {
+                    if (response === null || response === undefined) {
+                        document.getElementById("id").value  = null;
+                        document.getElementById("number").value  = null;      
+                        // メッセージ表示
+                        alert("照会対象データの取得に失敗しました。対象のデータが存在しません！");                    
+                    } else {
+                        document.getElementById("id").value  = response.id;
+                        document.getElementById("number").value  = response.number;
+                        // メッセージ表示
+                        alert("照会対象データの取得が完了しました。対象のデータをご確認ください！");   
+                    }
+                })
+            }); 
+
+            // 更新イベント
+            $("#update").on("click", function() {
+                // Form内の情報をJSONに変換
+                var data = $('form').serializeArray();
+                // REST APIのURL指定
+                var action = $("form").attr("action");
+                // JSONを呼び出し先のLambda関数の求める形に整形
+                data = parseJson(data);
+                // Ajax送信
+                $.ajax({
+                    type:          'put',
+                    dataType:      'json',
+                    contentType:   'application/json',
+                    scriptCharset: 'utf-8',
+                    url:           action,
+                    data:          JSON.stringify(data)
+                }).then(function() {
+                    // メッセージ表示
+                    alert("更新が完了しました！");
+                })
+            });
+            // JSON整形
+            var parseJson = function(data) {
+                var returnJson = {};
+                for (idx = 0; idx < data.length; idx++) {
+                    returnJson[data[idx].name] = data[idx].value
+                }
+                return returnJson;
+            }
+            
+            // 削除イベント
+            $("#delete").on("click", function() {
+                // REST APIのURL指定
+                var action = $("form").attr("action")+"?id="+document.getElementById("id").value;
+                // Ajax送信
+                $.ajax({
+                    type:          'delete',
+                    dataType:      'json',
+                    contentType:   'application/json',
+                    scriptCharset: 'utf-8',
+                    url:           action
+                }).then(function() {
+                    // メッセージ表示
+                    alert("削除が完了しました！");
+                })
+            });            
+        </script>
+    </body>
+</html>

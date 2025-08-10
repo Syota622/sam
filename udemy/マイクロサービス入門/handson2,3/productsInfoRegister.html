@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <title>商品情報登録</title>
+        <style>
+        label{
+            display: inline-block;
+            text-align: right;
+            width: 150px;
+        }
+        </style>
+    </head>
+    <body>
+        <form action="https://ドメイン名/products-stage/products">
+            <h2>商品情報登録</h2>
+            <label for="id">商品ID</label>
+            <input type="text" name="id"><br>
+            <label for="name">商品名</label>
+            <input type="text" name="name"><br>
+            <label for="price">価格</label>
+            <input type="text" name="price"><br>
+        </form>
+        <button id="register">登録</button>
+        <ul>
+            <li><a href="productsStockMenu.html">商品在庫管理メニュー</a></li>
+        </ul>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+        <script>
+                $("#register").on("click", function() {
+                // Form内の情報をJSONに変換
+                var data = $('form').serializeArray();
+                // REST APIのURL指定
+                var action = $("form").attr("action");
+                // JSONを呼び出し先のLambda関数の求める形に整形
+                data = parseJson(data);
+                // Ajax送信
+                $.ajax({
+                    type:          'post',
+                    dataType:      'json',
+                    contentType:   'application/json',
+                    scriptCharset: 'utf-8',
+                    url:           action,
+                    data:          JSON.stringify(data)
+                }).then(function() {
+                    // メッセージ表示
+                    alert("登録が完了しました！");
+                })
+            });
+            // JSON整形
+            var parseJson = function(data) {
+                var returnJson = {};
+                for (idx = 0; idx < data.length; idx++) {
+                    returnJson[data[idx].name] = data[idx].value
+                }
+                return returnJson;
+            }
+        </script>
+    </body>
+</html>
