@@ -1,22 +1,14 @@
-下記AWSサービスの性能について調査してます。 デフォルト値、Max値、緩和できるものとできないもの、東京とオレゴンの違いをmd形式の表でわかるように作成をお願いします。
-
-- CloudFront
-- API Gateway
-- DynamoDB
-- S3
-- Cognito
-
-了解です。主要な“性能・スループット系”の値と「デフォルト／Max（上限）／増枠や回避可否／東京(ap-northeast-1)とオレゴン(us-west-2)の違い」を、サービスごとにMarkdown表で整理しました。必要なところはAWS公式の根拠も付けています。
+# AWS主要サービスの性能制限比較表
 
 # CloudFront
 
-| 項目                                  |                      デフォルト値 |                               Max/上限 | 緩和・増枠可否                                                   | 東京 vs オレゴン          |
-| ----------------------------------- | --------------------------: | -----------------------------------: | --------------------------------------------------------- | ------------------- |
-| リクエスト数（RPS）/ディストリビューション             |                 250,000 RPS |                             増枠で引き上げ可 | **可**（Service Quotasで申請） ([AWS ドキュメント][1])                | グローバルサービスのため同一（差なし） |
-| 転送レート/ディストリビューション                   |                    150 Gbps |                             増枠で引き上げ可 | **可**（申請） ([AWS ドキュメント][1])                               | 同一                  |
-| オリジン応答タイムアウト（OriginReadTimeout）     |                         30秒 | 1–120秒（設定範囲）、一部ナレッジでは**最大180秒まで増枠可** | 設定で変更可／**更なる増枠は申請** ([AWS ドキュメント][2], [Repost][3])        | 同一                  |
-| オリジンKeep-Aliveタイムアウト（Custom Origin） |                          5秒 |                                  60秒 | 設定で変更可（S3オリジンを除く） ([AWS ドキュメント][2], [Terraform レジストリ][4]) | 同一                  |
-| 同時インバリデーション件数（進行中）                  | 個別パス合計3,000ファイル、ワイルドカード15パス |                                   固定 | **不可**（設計で回避） ([AWS ドキュメント][5])                           | 同一                  |
+| 項目 | デフォルト値 | Max/上限 | 緩和・増枠可否 | 東京 vs オレゴン | メトリクス監視 |
+| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- | ---------------------- |
+| リクエスト数（RPS）/ディストリビューション | 250,000 RPS |  増枠で引き上げ可 | **可**（Service Quotasで申請） | グローバルサービスのため同一（差なし） | `Requests`（リクエスト数合計）と `TotalErrorRate`／`4xxErrorRate`／`5xxErrorRate` を監視。急増・エラー率上昇を検知。 :contentReference[oaicite:0]{index=0} |
+| 転送レート/ディストリビューション | 150 Gbps |  増枠で引き上げ可 | **可**（申請） | 同一 | `BytesDownloaded`／`BytesUploaded`（転送バイト）で実効帯域の傾向を把握。ピーク帯域の超過兆候を検知。 :contentReference[oaicite:1]{index=1} |
+| オリジン応答タイムアウト（OriginReadTimeout） | 30秒 |  1–120秒（設定範囲） | 設定で変更可／**更なる増枠は申請** | 同一 | `OriginLatency`（オリジンTTFB）とステータス別エラー率を監視。遅延上昇＝タイムアウト接近の兆候。 :contentReference[oaicite:2]{index=2} |
+| オリジンKeep-Aliveタイムアウト（Custom Origin） | 5秒 |  60秒 | 設定で変更可（S3オリジン除く） | 同一 | `OriginLatency` と `5xxErrorRate` を併観。Keep-Alive不整合時の遅延・エラーを検知。 :contentReference[oaicite:3]{index=3} |
+| 同時インバリデーション件数（進行中） | 個別パス合計3,000ファイル、ワイルドカード15パス |  固定 | **不可**（設計で回避） | 同一 | 専用メトリクスなし。`CreateInvalidation` を CloudTrail で監査、負荷影響は `Requests`／エラー率で間接監視。 :contentReference[oaicite:4]{index=4} |
 
 > 補足：CloudFrontは自動スケールで“プレウォーム不要”。RPSやスループットは増枠申請＋キャッシュ/TTL設計で緩和可能です。([AWS ドキュメント][1])
 
@@ -24,12 +16,12 @@
 
 # API Gateway
 
-| 項目                              |                デフォルト値 |            Max/上限 | 緩和・増枠可否                                                    | 東京 vs オレゴン                                                          |
-| ------------------------------- | --------------------: | ----------------: | ---------------------------------------------------------- | ------------------------------------------------------------------- |
-| アカウント単位のスロットリング（RPS/Region）     | 10,000 RPS（バースト5,000） |             申請で増枠 | **可**（Service Quotas） ([AWS ドキュメント][6])                    | **同一**（どちらも標準の10k/5k。※一部新規リージョンのみ2,500/1,250の例あり） ([AWS ドキュメント][6]) |
-| 統合タイムアウト（REST：Regional/Private） |                   29秒 | **29秒超に延長可**（要調整） | **可**（>29秒へ延長可。RPS上限の引き下げとトレードオフになる場合あり） ([AWS ドキュメント][7]) | 同一                                                                  |
-| 統合タイムアウト（HTTP API）              |                  ～30秒 |               30秒 | **不可**（設計で回避） ([Repost][8])                                | 同一                                                                  |
-| ペイロードサイズ（REST/HTTP、非WebSocket）  |                 10 MB |             10 MB | **不可**（S3直PUT等で回避） ([AWS ドキュメント][9])                       |                                                                     |
+| 項目 | デフォルト値 | Max/上限 | 緩和・増枠可否 | 東京 vs オレゴン | メトリクス監視 |
+| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- | ---------------------- |
+| アカウント単位のスロットリング（RPS/Region） | 10,000 RPS（バースト5,000） |  申請で増枠 | **可**（Service Quotas） | 同一 | `Count`（処理数）と `4XXError`／`5XXError`、`Latency` を基本監視。閾値超でスロットル兆候を検出。 :contentReference[oaicite:5]{index=5} |
+| 統合タイムアウト（REST：Regional/Private） | 29秒 |  固定 | **不可**（値自体は固定／設計対応） | 同一 | `IntegrationLatency` と `Latency` を p95/p99 で監視。29秒接近でアラート。 :contentReference[oaicite:6]{index=6} |
+| 統合タイムアウト（HTTP API） | ～30秒 |  30秒 | **不可** | 同一 | `Latency` と `IntegrationLatency`、`DataProcessed` を監視（ルート別は詳細メトリクス有効化）。 :contentReference[oaicite:7]{index=7} |
+| ペイロードサイズ（REST/HTTP、非WebSocket） | 10 MB |  10 MB | **不可**（S3直PUT等で回避） | 同一 | `DataProcessed`（処理バイト）で大型ペイロードの傾向を可視化。エラー率も併観。 :contentReference[oaicite:8]{index=8} |
 
 > 回避例：大きな処理はStep Functions等で**非同期化**、大容量アップロードは**S3プリサインURL**を利用。([AWS ドキュメント][10], [AWS in Plain English][11])
 
@@ -37,11 +29,11 @@
 
 # DynamoDB
 
-| 項目                      |                  デフォルト値 | Max/上限 | 緩和・増枠可否                                                   | 東京 vs オレゴン |
-| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- |
-| パーティション当たりの最大スループット     |   3,000 RCU / 1,000 WCU |     固定 | **不可**（ハード制限。キー設計/シャーディングで緩和） ([AWS ドキュメント][12])          | 同一         |
-| アイテムサイズ                 |             400 KB/アイテム | 400 KB | **不可**（S3へ本体、DynamoDBにポインタで緩和） ([AWS ドキュメント][13])         | 同一         |
-| テーブルあたりスループット上限（初期クォータ） | 40,000 RRU / 40,000 WRU |  申請で増枠 | **可**（Service Quotas。オンデマンド/プロビジョンド双方） ([AWS ドキュメント][14]) |            |
+| 項目 | デフォルト値 | Max/上限 | 緩和・増枠可否 | 東京 vs オレゴン | メトリクス監視 |
+| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- | ---------------------- |
+| パーティション当たりの最大スループット | 3,000 RCU / 1,000 WCU |  固定 | **不可**（キー設計で緩和） | 同一 | `ConsumedReadCapacityUnits`／`ConsumedWriteCapacityUnits` と `ThrottledRequests`／`Read/WriteThrottleEvents` を監視。偏り・スパイク検知。 :contentReference[oaicite:9]{index=9} |
+| アイテムサイズ | 400 KB/アイテム |  400 KB | **不可**（S3分離で回避） | 同一 | `SuccessfulRequestLatency`（サービス内レイテンシ）とエラー系を監視。サイズ超過はアプリ側検知と併用。 :contentReference[oaicite:10]{index=10} |
+| テーブルあたりスループット上限（初期クォータ） | 40,000 RRU / 40,000 WRU |  申請で増枠 | **可**（Service Quotas） | 同一 | `Consumed*` と `ProvisionedRead/WriteCapacityUnits` の比率、`ThrottledRequests` を組み合わせてアラート。 :contentReference[oaicite:11]{index=11} |
 
 > 補足：トラフィック偏りは**アダプティブキャパシティ**で一部救済されますが、基本は**良いパーティションキー設計**が前提です。([AWS ドキュメント][15])
 
@@ -49,24 +41,24 @@
 
 # S3
 
-| 項目                       |                      デフォルト値 |                   Max/上限 | 緩和・増枠可否                                     | 東京 vs オレゴン                                  |
-| ------------------------ | --------------------------: | -----------------------: | ------------------------------------------- | ------------------------------------------- |
-| リクエストレート（1プレフィックスあたりの目安） | ≥ 3,500 書込系 / 5,500 読取系 RPS |      プレフィックスを増やして水平方向に拡張 | **設計で緩和**（プレフィックス分割・並列化） ([AWS ドキュメント][16]) | 同一（レイテンシは地理で差。遠距離はTAで緩和） ([AWS ドキュメント][17]) |
-| オブジェクトサイズ（単一PUT）         |                       ～5 GB |                     5 GB | **不可**（マルチパート推奨） ([AWS ドキュメント][18])         | 同一                                          |
-| オブジェクトサイズ（マルチパート）        |                           – |                    ～5 TB | **不可**（仕様） ([AWS ドキュメント][19])               |                                             |
-| 長距離転送の性能                 |                        通常転送 | Transfer Accelerationで改善 | **機能で緩和**（有効化するだけ） ([AWS ドキュメント][17])       | **東京⇄オレゴン等の跨地域で効果大** ([AWS ドキュメント][17])     |
+| 項目 | デフォルト値 | Max/上限 | 緩和・増枠可否 | 東京 vs オレゴン | メトリクス監視 |
+| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- | ---------------------- |
+| リクエストレート（1プレフィックスあたりの目安） | ≥ 3,500 書込系 / 5,500 読取系 RPS |  プレフィックス分割で水平拡張 | **設計で緩和** | 同一（遅延は地理差） | リクエストメトリクス `AllRequests`、`Get/Put/Delete/ListRequests`、`4xxErrors`／`5xxErrors`、`FirstByteLatency`／`TotalRequestLatency` を有効化・監視。 :contentReference[oaicite:12]{index=12} |
+| オブジェクトサイズ（単一PUT） | ～5 GB |  5 GB | **不可**（マルチパート推奨） | 同一 | `BytesUploaded`／`BytesDownloaded` とレイテンシ系でアップロード健全性を監視。 :contentReference[oaicite:13]{index=13} |
+| オブジェクトサイズ（マルチパート） | – |  ～5 TB | **不可** | 同一 | 大容量転送時の `Bytes*`、`FirstByteLatency`／`TotalRequestLatency` を監視。失敗は `5xxErrors` を確認。 :contentReference[oaicite:14]{index=14} |
+| 長距離転送の性能 | 通常転送 |  Transfer Acceleration で改善 | **機能で緩和** | 東京⇄オレゴン等で効果大 | `AllRequests`／レイテンシ系の地域別比較で効果検証（TA有効・無効の差分を見る）。 :contentReference[oaicite:15]{index=15} |
 
 ---
 
 # Cognito（User Pools ほか）
 
-| 項目（カテゴリー）                                      |         デフォルト値（RPS） | Max/上限 | 緩和・増枠可否                            | 東京 vs オレゴン                                     |
-| ---------------------------------------------- | ------------------: | -----: | ---------------------------------- | ---------------------------------------------- |
-| UserAuthentication（サインイン/トークン等）                |             120 RPS |  申請で増枠 | **可**（有償の増枠） ([AWS ドキュメント][20])    | **同一**（クォータはRegion毎だが数値は同じ） ([AWS ドキュメント][20]) |
-| UserCreation（SignUp等）                          |              50 RPS |  申請で増枠 | **可** ([AWS ドキュメント][20])           | 同一                                             |
-| UserRead                                       |             120 RPS |  申請で増枠 | **可** ([AWS ドキュメント][20])           | 同一                                             |
-| UserAccountRecovery（ForgotPassword等）           |              30 RPS |     固定 | **不可**（設計で緩和） ([AWS ドキュメント][20])   | 同一                                             |
-| Hosted UI ドメインのバルクリミット（1 IP / 1クライアント / 1ドメイン） | 300 / 300 / 500 RPS |     固定 | **不可**（WAF等で保護） ([AWS ドキュメント][20]) |                                                |
+| 項目（カテゴリー） | デフォルト値（RPS） | Max/上限 | 緩和・増枠可否 | 東京 vs オレゴン | メトリクス監視 |
+| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- | ---------------------- |
+| UserAuthentication（サインイン/トークン等） | 120 RPS |  申請で増枠 | **可**（Service Quotas） | 同一 | `SignInSuccesses`／`SignInThrottles`、`TokenRefreshSuccesses`／`TokenRefreshThrottles` を監視。成功率とスロットル検知。 :contentReference[oaicite:16]{index=16} |
+| UserCreation（SignUp等） | 50 RPS |  申請で増枠 | **可** | 同一 | `SignUpSuccesses`／`SignUpThrottles` を監視。招待・登録スパイク時の健全性を把握。 :contentReference[oaicite:17]{index=17} |
+| UserRead | 120 RPS |  申請で増枠 | **可** | 同一 | `CallCount`／`ThrottleCount`（使用量とスロットル）を監視。API別ディメンションで詳細化。 :contentReference[oaicite:18]{index=18} |
+| UserAccountRecovery（ForgotPassword等） | 30 RPS |  固定 | **不可**（設計で緩和） | 同一 | `CallCount`／`ThrottleCount` に加え、失敗時はアプリ側のエラー率を併観。 :contentReference[oaicite:19]{index=19} |
+| Hosted UI ドメインのバルクリミット（1 IP / 1クライアント / 1ドメイン） | 300 / 300 / 500 RPS |  固定 | **不可**（WAF等で保護） | 同一 | 直接メトリクスは限定的。`CallCount`／`ThrottleCount` と外側のWAF計測を併用。 :contentReference[oaicite:20]{index=20} |****                                          |
 
 > 補足：Cognitoのクォータは**アカウント×リージョン**単位で適用。増枠は**Service Quotas**から「購入（有償）」でリクエストします。([AWS ドキュメント][20])
 
@@ -105,3 +97,5 @@
 [19]: https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html?utm_source=chatgpt.com "Amazon S3 multipart upload limits"
 [20]: https://docs.aws.amazon.com/cognito/latest/developerguide/quotas.html "Quotas in Amazon Cognito - Amazon Cognito"
 [21]: https://docs.aws.amazon.com/general/latest/gr/aws_service_limits.html?utm_source=chatgpt.com "AWS service quotas - AWS General Reference"
+
+
