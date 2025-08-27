@@ -123,3 +123,85 @@
 
 [1]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-signed-urls.html?utm_source=chatgpt.com "Use signed URLs - Amazon CloudFront"
 [2]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html?utm_source=chatgpt.com "Quotas - Amazon CloudFront"
+
+了解！“性能”にだけ絞って、**Python で CloudFront の署名付きURL**を運用する時の要点をまとめます。
+※ここでは **配信RPSや転送Gbpsなど“署名付きURLと無関係の上限”は扱いません。**
+
+# まず結論（1分で把握）
+
+* **発行TPSにAWSの上限はない**（署名はアプリ内でローカル計算。boto3でAPIを叩かない） 。([AWS ドキュメント][1])
+* “署名付きURLならでは”の性能ボトルネックは **(A) 署名計算のCPUコスト** と **(B) URL/リクエスト長のハード上限**（**URL ≤ 8,192B**、**リクエスト全体 ≤ 20,480B**）。これを超えると **HTTP 413**。([AWS ドキュメント][2])
+* **Secrets Manager**から秘密鍵を取る場合は、**起動時に取得→メモリキャッシュ**が基本。毎リクエスト取得はNG（遅い＆コスト高）。([AWS ドキュメント][3])
+* **CustomポリシーでURLが長くなりがち**なら、**Signed Cookies**へ切替して“署名情報をURLから外す”。([AWS ドキュメント][4])
+
+## 性能だけに絞ったチェック表（Python＋Secrets Manager前提）
+
+```md
+| 観点（英名） | 性能に効くポイント / 制限 | ベストプラクティス（Python 実装） |
+| --- | --- | --- |
+| 署名の計算（ Signing work ） | 発行TPSは**サーバCPU**次第。AWS側クォータはなし。 | 秘密鍵は起動時ロード→**使い回し**。`cryptography` で RSA-SHA1 署名。**マルチプロセス**でCPUを使い切る。 :contentReference[oaicite:4]{index=4} |
+| ポリシー種別（ Canned vs Custom ） | **Custom**はURL内にポリシーJSONを埋める＝**URLが長く重い**。 | 可能なら **Canned**（失効時刻だけ）を優先。複雑条件が必要な場合のみ Custom。 :contentReference[oaicite:5]{index=5} |
+| URL 長（ Maximum URL length ） | **8,192B**超で **413**。大量発行でも“アクセスが失敗”すれば意味なし。 | **Signed Cookies**に切替（署名情報をURLから外す）。 :contentReference[oaicite:6]{index=6} |
+| リクエスト長（ Max request length ） | **20,480B**超で **413**（ヘッダー/クッキー/クエリ含む）。 | クエリ/ヘッダは最小限。必要な署名情報は**Cookie側**に寄せる。 :contentReference[oaicite:7]{index=7} |
+| Cache key と署名クエリ（ Cache key vs signature ） | 署名クエリをCache keyに含めると**断片化**して遅くなる。 | **Cache Policy**で「必要なクエリだけ」含める（署名パラメータは除外）。 :contentReference[oaicite:8]{index=8} |
+| 秘密鍵の取得（ Secrets Manager ） | 毎回取得は**高レイテンシ＆高コスト**。 | **起動時に `GetSecretValue`**→PEMをデコード→**メモリに保持**。必要なら**SMのキャッシングコンポーネント**利用。権限は `secretsmanager:GetSecretValue`。 :contentReference[oaicite:9]{index=9} |
+| 鍵ローテーション（ Key rotation ） | ローテ時に“古鍵キャッシュ”で署名すると**403増**。 | Secretの **VersionStage=AWSCURRENT** を見て再取得。再デプロイや定期リフレッシュで反映。失効直後は**403監視**で検知。 :contentReference[oaicite:10]{index=10} |
+| 失敗監視（ 403 / 413 ） | 期限切れ/不正署名で**403**、長すぎで**413**。 | CloudFront **標準/リアルタイムログ**の `sc-status` を集計（403/413）。403が急増→時刻ずれ/鍵/失効設定を疑う。 :contentReference[oaicite:11]{index=11} |
+```
+
+## 最小サンプル（Secrets Manager から鍵→署名付きURL・Canned）
+
+> boto3 の **API呼び出しは鍵の取得だけ**。**URL署名はローカル計算**です（`CloudFrontSigner` も内部でローカル署名）。([AWS ドキュメント][5])
+
+```python
+# pip install cryptography boto3 botocore
+import base64, json, os, time
+import boto3
+from botocore.signers import CloudFrontSigner
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+
+# ---- Secrets Manager から秘密鍵PEMを一度だけ取得・ロード（起動時推奨） ----
+_SECRET_ID   = os.getenv("CF_PRIVATE_KEY_SECRET_ID")  # 例: arn か 名前
+_KEY_PAIR_ID = os.getenv("CF_KEY_PAIR_ID")            # CloudFront Key Group の key pair ID
+_sm  = boto3.client("secretsmanager")
+_pem = _sm.get_secret_value(SecretId=_SECRET_ID)["SecretString"]  # 権限: secretsmanager:GetSecretValue
+_PRIV = serialization.load_pem_private_key(_pem.encode(), password=None)
+
+def _rsa_signer(msg: bytes) -> bytes:
+    # CloudFront は RSA-SHA1 検証。Python側はこの署名を「ローカル」で作る。
+    return _PRIV.sign(msg, padding.PKCS1v15(), hashes.SHA1())
+
+_signer = CloudFrontSigner(_KEY_PAIR_ID, _rsa_signer)
+
+def issue_signed_url(resource_url: str, ttl_seconds: int = 300) -> str:
+    # Canned policy（期限だけ）の署名は URL が短く高速
+    expires = int(time.time()) + ttl_seconds
+    return _signer.generate_presigned_url(resource_url, date_less_than=expires)
+
+# 例:
+# url = issue_signed_url("https://d111111abcdef8.cloudfront.net/path/file.mp4", 300)
+```
+
+### 運用のコツ（超要点）
+
+* **大量アクセス/複数ファイル**→**Signed Cookies**に寄せる（1回の署名で複数ファイルOK、URL短い）。([AWS ドキュメント][4])
+* **短命URLを大量発行**する時は、**Canned**＋**並列（プロセス）**＋**鍵オブジェクトの使い回し**。([AWS ドキュメント][5])
+* **監視**：403（期限/鍵不整合）と 413（長すぎ）を**ログで常時可視化**。閾値例：対象ビヘイビアの 4xx 比率 > 1〜3% を要注意。([AWS ドキュメント][6])
+
+---
+
+## 参照はこの **3 本だけでOK**
+
+1. **署名付きURL/クッキーの作り方（選択・手順・概念）**：*Use signed URLs / cookies*（CloudFront Dev Guide）。([AWS ドキュメント][5])
+2. **URL長 8,192B / リクエスト長 20,480B / 413 の根拠**：*CloudFront Quotas*（および挙動の説明）。([AWS ドキュメント][2])
+3. **Secrets Manager から秘密鍵を安全に取得（キャッシュの推奨）**：*Retrieving secrets with Python*。([AWS ドキュメント][3])
+
+必要なら、この方針で**Signed Cookies 版のPythonサンプル**や、**403/413 の CloudWatch アラーム式**もすぐ出します。
+
+[1]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PrivateContent.html?utm_source=chatgpt.com "Serve private content with signed URLs and signed cookies"
+[2]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html?utm_source=chatgpt.com "Quotas - Amazon CloudFront"
+[3]: https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python-sdk.html?utm_source=chatgpt.com "Get a Secrets Manager secret value using the Python ..."
+[4]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-signed-cookies.html?utm_source=chatgpt.com "Use signed cookies - Amazon CloudFront"
+[5]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-signed-urls.html?utm_source=chatgpt.com "Use signed URLs - Amazon CloudFront - AWS Documentation"
+[6]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/RequestAndResponseBehaviorCustomOrigin.html?utm_source=chatgpt.com "Request and response behavior for custom origins"
