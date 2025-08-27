@@ -6,7 +6,7 @@
 | 発行数・発行レート |  発行はローカルで署名文字列を作るだけ（APIコール不要）なので “発行そのもの” に AWS 側のクォータはなし。実際にアクセスされた時点で S3 の通常クォータが効く。  :contentReference[oaicite:2]{index=2} |  同様に、発行自体のクォータはない（ローカル署名）。利用時は CloudFront の通常クォータ（RPS/帯域など）が適用。  :contentReference[oaicite:3]{index=3} |
 | URL/ポリシーのサイズ |  特段の専用上限はない（通常のURL長制約に依存）。  |  URL 長は最大 8,192 バイト、リクエスト全体は 20,480 バイト。ポリシーが長く URL が肥大化する場合は **signed cookies** を推奨。  :contentReference[oaicite:4]{index=4} |
 | 利用時のサイズ制限 |  単一 PUT は 5GB まで。5TB までは **マルチパートアップロード** を使用。  :contentReference[oaicite:5]{index=5} |  配信する実体のサイズはオリジン（例：S3）の制約に従う。CloudFront 側に特有のオブジェクトサイズ上限はなし。 |
-| 利用時のレート制限 |  1プレフィックスあたり目安：**書込系 3,500 RPS / 読取系 5,500 RPS**。プレフィックスを増やせば水平スケール可。  :contentReference[oaicite:6]{index=6} |  CloudFront の通常クォータ（リクエスト数や帯域）の枠内で利用。URL長超過は 413 で拒否される。  :contentReference[oaicite:7]{index=7} |
+| 利用時のレート制限 |  1プレフィックスあたり目安：**書込系 3,500 RPS / 読取  系 5,500 RPS**。プレフィックスを増やせば水平スケール可。  :contentReference[oaicite:6]{index=6} |  CloudFront の通常クォータ（リクエスト数や帯域）の枠内で利用。URL長超過は 413 で拒否される。  :contentReference[oaicite:7]{index=7} |
 
 ### 補足（運用のコツ）
 
@@ -75,3 +75,51 @@
 [3]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-creating-signed-url-custom-policy.html?utm_source=chatgpt.com "Create a signed URL using a custom policy"
 [4]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-signed-cookies.html?utm_source=chatgpt.com "Use signed cookies - Amazon CloudFront"
 [5]: https://docs.aws.amazon.com/general/latest/gr/cf_region.html?utm_source=chatgpt.com "Amazon CloudFront endpoints and quotas"
+
+わかりやすく要点だけまとめます。
+**結論**：CloudFront の署名付きURLは**発行自体にAWSの上限がありません**。性能ボトルネックは「アプリ側の署名計算（CPU）」と「署名付きURLならではの長さ制限」だけを見ればOKです。([AWS ドキュメント][1])
+
+### まずはこれだけ（超要点）
+
+* **発行TPSの制限：なし**（署名はサーバ内で実行。AWS APIを叩かない） 。([AWS ドキュメント][1])
+* **“署名付きURLゆえの上限”**
+
+  1. **URL長 ≤ 8,192バイト** を超えると **HTTP 413**。
+  2. **リクエスト全体長 ≤ 20,480バイト**（ヘッダー/クッキー/クエリ含む）超でも **413**。
+     → 長くなりがちな場合は **Signed Cookies** を使って「署名情報をURLから外す」。([AWS ドキュメント][2])
+
+---
+
+### 性能だけに絞った設計チェック（Python想定）
+
+```md
+| 観点（英名） | 性能に効くポイント / リスク | すぐやる対策（Python/設計） |
+| --- | --- | --- |
+| 署名の計算（ Signing work ） | 発行TPSは**サーバCPU**次第。ユーザー増＝署名回数が直撃。 | 鍵PEMは**起動時に一度読み込み**→使い回し（毎回ロードしない）。`cryptography`でRSA署名。並列は**プロセス**（CPUコア数）。 :contentReference[oaicite:3]{index=3} |
+| ポリシー種別（ Canned vs Custom ） | **Custom**はポリシーJSONをURLに載せる＝**URLが長い**。 | 可能なら**Canned**（期限のみ）に。IP制限等が必要な時だけCustom。 :contentReference[oaicite:4]{index=4} |
+| URL長（ Maximum URL length ） | **8,192B超で 413**。署名やCustomで超えやすい。 | **Signed Cookies**に切替（URLから署名情報を除外）。 :contentReference[oaicite:5]{index=5} |
+| リクエスト長（ Max request length ） | **20,480B超で 413**（ヘッダ/クッキー/クエリ含む）。 | クエリ/ヘッダは最小限。必要なら**クッキー側に寄せる**。 :contentReference[oaicite:6]{index=6} |
+| キャッシュキー（ Cache key vs signature ） | 署名クエリをCache keyに含めると**断片化**して遅くなる。 | **Cache Policy**で「必要なクエリだけ」を含める（署名系は除外）。 :contentReference[oaicite:7]{index=7} |
+```
+
+---
+
+### 運用で困らないための最小アラーム＆ログ見る場所
+
+* **403 の急増**（期限切れ/不正署名）：
+  CloudWatch の `4xxErrorRate`（対象ビヘイビア）アラーム ＋ **アクセスログ**で `sc-status=403` を確認。
+* **413 の発生**（長すぎ）：
+  **アクセスログ**で `sc-status=413` を検知 → **Signed Cookies へ切替 or Canned化**を検討。
+* ログは CloudFront の**標準アクセスログ** or **リアルタイムログ**で確認（`sc-status` など）。([AWS ドキュメント][2])
+
+---
+
+### 参照はこの2本だけでOK（最小）
+
+1. **「Signed URLs / Cookies の基本と実装（Pythonでも同じ概念）」** – *Use signed URLs*（CloudFront Dev Guide）。([AWS ドキュメント][1])
+2. **「URL長 8,192B / リクエスト長 20,480B のハード上限」** – *Quotas – Amazon CloudFront*。([AWS ドキュメント][2])
+
+> さらに具体的に：必要なら、この方針で**Pythonサンプル（Canned/Custom・Cookies）**と**ベンチ用スクリプト**を作ってお渡しします。
+
+[1]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-signed-urls.html?utm_source=chatgpt.com "Use signed URLs - Amazon CloudFront"
+[2]: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html?utm_source=chatgpt.com "Quotas - Amazon CloudFront"
