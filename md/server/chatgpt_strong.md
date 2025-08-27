@@ -62,6 +62,18 @@
 
 > 補足：Cognitoのクォータは**アカウント×リージョン**単位で適用。増枠は**Service Quotas**から「購入（有償）」でリクエストします。([AWS ドキュメント][20])
 
+# Lambdaa
+
+| 項目 | デフォルト値 | Max/上限 | 緩和・増枠可否 | 東京 vs オレゴン | メトリクス監視 |
+| ----------------------- | ----------------------: | -----: | --------------------------------------------------------- | ---------- | ---------------------- |
+| アカウント単位の同時実行（Regional concurrency） |  1,000 同時実行/Region  |  申請で増枠  | **可**（Service Quotasで増枠。関数ごとの Reserved/Provisioned concurrency で制御） :contentReference[oaicite:0]{index=0} | 同一 | `ConcurrentExecutions` / `UnreservedConcurrentExecutions` / `Throttles` を監視。スロットル発生や枯渇を検知。 :contentReference[oaicite:1]{index=1} |
+| 初期バースト（Burst concurrency） |  Regionにより 500–3,000  |  固定（増枠不可）  | **不可**（設計で緩和：Provisioned Concurrency、SQS/Kinesis で平滑化） :contentReference[oaicite:2]{index=2} | **us-west-2: 3,000 / ap-northeast-1: 1,000** | `Throttles`／`ConcurrentExecutions` を基本に、PC使用時は `ProvisionedConcurrencySpilloverInvocations` も監視。 :contentReference[oaicite:3]{index=3} |
+| 実行タイムアウト |  3 秒  |  900 秒（15 分）  | **可**（関数設定で変更。長時間処理は Step Functions 等へ分離） :contentReference[oaicite:4]{index=4} | 同一 | `Duration`（p95/p99）と `Errors` を監視（Timeoutは `Errors` に反映）。 :contentReference[oaicite:5]{index=5} |
+| メモリ / vCPU |  128 MB  |  10,240 MB（1 MB刻み）  | **可**（関数設定で変更。メモリ増＝CPUも比例増） :contentReference[oaicite:6]{index=6} | 同一 | 標準メトリクスなし。**Lambda Insights** 有効時は `memory_utilization` を使用、ログの `MaxMemoryUsed` は CloudWatch Logs Insights で集計。 :contentReference[oaicite:7]{index=7} |
+| エフェメラルストレージ（/tmp） |  512 MB  |  10,240 MB（1 MB刻み）  | **可**（関数設定で変更） :contentReference[oaicite:8]{index=8} | 同一 | **Lambda Insights** の `tmp_max` で空き容量推移を監視。容量不足の兆候を検知。 :contentReference[oaicite:9]{index=9} |
+| ペイロードサイズ（Invoke） |  –  |  同期：リクエスト/レスポンス各 6 MB、ストリーミングは 6 MB 超過分は 2 MB/秒・最大 200 MB、非同期：256 KB  | **不可**（S3 直PUT/分割・圧縮等で回避） :contentReference[oaicite:10]{index=10} | 同一 | 大型化の兆候はクライアント/連携側のエラー率と併観。設計上は S3 プリサインURLや分割送信を採用。 :contentReference[oaicite:11]{index=11} |
+| デプロイパッケージサイズ（Zip/Container） |  –  |  Zip：50 MB（API/Consoleのzip）・（解凍後）合計 250 MB、Container：10 GB（非圧縮・全レイヤ合計）  | **不可**（Container Image や S3 経由アップロード、Layers分割で回避） :contentReference[oaicite:12]{index=12} | 同一 | 専用メトリクスなし。デプロイは CodePipeline/CloudFormation のイベントや CloudTrail で監査。 |
+
 ---
 
 ## メモ（読み方・実務の着地）
