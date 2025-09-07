@@ -1,5 +1,8 @@
-const AWS = require('aws-sdk');
-const dynamoDb = new AWS.DynamoDB.DocumentClient();
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, GetCommand } = require("@aws-sdk/lib-dynamodb");
+
+const client = new DynamoDBClient({});
+const dynamoDb = DynamoDBDocumentClient.from(client);
 
 module.exports.handler = (event, context) => {
   // テーブル名(TableName)とキー項目(Key)のオブジェクト
@@ -11,7 +14,7 @@ module.exports.handler = (event, context) => {
   };
 
   // DynamoDBからのデータ取得
-  return dynamoDb.get(params, function(err, data) {
+  return dynamoDb.send(new GetCommand(params), function(err, data) {
     if (err) {
       // エラー時
       context.fail(err);

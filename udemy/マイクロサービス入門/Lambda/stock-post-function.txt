@@ -1,5 +1,8 @@
-const AWS = require('aws-sdk');
-const dynamoDb = new AWS.DynamoDB.DocumentClient();
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
+
+const client = new DynamoDBClient({});
+const dynamoDb = DynamoDBDocumentClient.from(client);
 
 module.exports.handler = (event, context) => {
   // JSONをJSのオブジェクトに変換
@@ -15,7 +18,7 @@ module.exports.handler = (event, context) => {
   };
 
   // DynamoDBへのデータ登録
-  dynamoDb.put(params, function(err, data) {
+  dynamoDb.send(new PutCommand(params), function(err, data) {
     if (err) {
       context.fail(err); // エラー時
     } else {
