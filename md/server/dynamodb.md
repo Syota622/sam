@@ -134,3 +134,10 @@ aws cloudwatch get-metric-statistics \
 レート制限: AWS CLIには独自のレート制限があるため、--cli-read-timeoutや--cli-connect-timeoutオプションの調整が必要な場合があります
 エラーハンドリング: スロットリングが発生した場合、指数バックオフでリトライするのが推奨されます
 このテストを実行することで、実際のスロットリング動作とCloudWatchメトリクスの関係を確認できるはずです。
+
+
+当方の環境にて確認した CloudWatch Contributor Insights for DynamoDB に記録される Amazon DynamoDB API 一覧:
+
+```
+GetItem, PutItem, UpdateItem, DeleteItem, Query, BatchGetItem, BatchWriteItem, TransactGetItems, TransactWriteItems
+```
